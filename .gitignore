@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+
+# Variables de entorno
+.env
+
+# Dremio runtime/data
+dremio/data/
+
+# MySQL runtime/data
+mysql_data/
+
+# Logs
+*.log
+
+# CSVs generados
+*.csv
+
+# Mac / Windows basura
+.DS_Store
+Thumbs.db
