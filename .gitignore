@@ -18,9 +18,6 @@ mysql_data/
 # Logs
 *.log
 
-# CSVs generados
-*.csv
-
 # Mac / Windows basura
 .DS_Store
 Thumbs.db
