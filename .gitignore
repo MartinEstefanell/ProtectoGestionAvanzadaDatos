@@ -18,6 +18,9 @@ mysql_data/
 # Logs
 *.log
 
+# Artefactos locales
+artifacts/
+
 # Mac / Windows basura
 .DS_Store
 Thumbs.db

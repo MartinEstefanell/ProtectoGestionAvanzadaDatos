@@ -15,12 +15,29 @@ def cargar_datos(ruta_entrada: Path) -> pd.DataFrame:
     extension = ruta_entrada.suffix.lower()
 
     if extension == ".csv":
-        return pd.read_csv(ruta_entrada)
+        return cargar_csv(ruta_entrada)
 
     if extension in {".xlsx", ".xls"}:
         return pd.read_excel(ruta_entrada)
 
     raise ValueError("Formato no soportado. Usa .csv, .xlsx o .xls")
+
+
+def cargar_csv(ruta_entrada: Path) -> pd.DataFrame:
+    primeras_lineas = ruta_entrada.read_text(encoding="utf-8").splitlines()[:3]
+
+    if primeras_lineas == [
+        "Price,Close,High,Low,Open,Volume",
+        "Ticker,^GSPC,^GSPC,^GSPC,^GSPC,^GSPC",
+        "Date,,,,,",
+    ]:
+        return pd.read_csv(
+            ruta_entrada,
+            skiprows=3,
+            names=["Date", "Close", "High", "Low", "Open", "Volume"],
+        )
+
+    return pd.read_csv(ruta_entrada)
 
 
 def generar_reporte(ruta_entrada: Path, ruta_salida_html: Path, titulo: str) -> None:
@@ -39,7 +56,7 @@ def main() -> None:
     parser.add_argument(
         "archivo_entrada",
         nargs="?",
-        default="sp500_2022_date_close.csv",
+        default="C:\\Users\\marti\\Desktop\\Lakehouse\\dataset\\sp500_2022.csv",
         help="Archivo de entrada (.csv, .xlsx, .xls).",
     )
     parser.add_argument(
