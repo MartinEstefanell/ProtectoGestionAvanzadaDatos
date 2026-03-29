@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from io import BytesIO
 from pathlib import Path
 
 from minio import Minio
@@ -62,37 +61,21 @@ def upload_directory(client: Minio, bucket_name: str, local_root: Path) -> None:
             print(f"Subido: {object_name}")
 
 
-def ensure_empty_prefixes(client: Minio, bucket_name: str) -> None:
-    empty_objects = [
-        "curated/sp500_clean/.keep",
-        "curated/event_clean/.keep",
-        "curated/event_audit_clean/.keep",
-    ]
-
-    for object_name in empty_objects:
-        client.put_object(
-            bucket_name,
-            object_name,
-            data=BytesIO(b""),
-            length=0,
-            content_type="application/octet-stream",
-        )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Crea o actualiza un bucket en MinIO y sincroniza el lakehouse local."
     )
-    parser.add_argument("--bucket-name", default="lakehouse")
-    parser.add_argument("--lakehouse-dir", default="")
-    parser.add_argument("--endpoint", default="localhost:9000")
-    parser.add_argument("--access-key", default="admin")
-    parser.add_argument("--secret-key", default="password")
+    parser.add_argument("--bucket-name", default="lakehouse", help="Nombre del bucket")
+    parser.add_argument("--lakehouse-dir", default="", help="Directorio local del lakehouse")
+    parser.add_argument("--endpoint", default="localhost:9000", help="Endpoint de MinIO")
+    parser.add_argument("--access-key", default="admin", help="Access key de MinIO")
+    parser.add_argument("--secret-key", default="password", help="Secret key de MinIO")
     parser.add_argument("--secure", action="store_true", help="Usar HTTPS")
     parser.add_argument("--reset-bucket", action="store_true", help="Borrar y recrear bucket")
     args = parser.parse_args()
 
     project_root = get_project_root()
+
     resolved_lakehouse_dir = (
         Path(args.lakehouse_dir).resolve()
         if args.lakehouse_dir.strip()
@@ -100,10 +83,21 @@ def main() -> None:
     )
 
     resolved_lakehouse_dir = get_required_path(resolved_lakehouse_dir)
+
+    # Validaciones mínimas esperadas
     get_required_path(resolved_lakehouse_dir / "raw" / "sp500" / "sp500_2022.csv")
     get_required_path(resolved_lakehouse_dir / "raw" / "event" / "events_2022.csv")
     get_required_path(resolved_lakehouse_dir / "raw" / "event_audit" / "events_audit_2022.csv")
+
     get_required_path(resolved_lakehouse_dir / "dimensions" / "dim_date.csv")
+    get_required_path(resolved_lakehouse_dir / "dimensions" / "dim_event.csv")
+    get_required_path(resolved_lakehouse_dir / "dimensions" / "fact_sp500.csv")
+
+    get_required_path(resolved_lakehouse_dir / "curated" / "sp500_clean" / "sp500_2022_curado.csv")
+    get_required_path(resolved_lakehouse_dir / "curated" / "event_clean" / "events_2022_curado.csv")
+    get_required_path(
+        resolved_lakehouse_dir / "curated" / "event_audit_clean" / "events_audit_2022_curado.csv"
+    )
 
     try:
         client = create_client(
@@ -116,8 +110,8 @@ def main() -> None:
         reset_bucket_if_needed(client, args.bucket_name, args.reset_bucket)
         ensure_bucket(client, args.bucket_name)
         upload_directory(client, args.bucket_name, resolved_lakehouse_dir)
-        ensure_empty_prefixes(client, args.bucket_name)
 
+        print()
         print(f"Bucket creado o actualizado: {args.bucket_name}")
         print(f"Objetos sincronizados desde: {resolved_lakehouse_dir}")
         print("Si quieres borrar objetos viejos del bucket, ejecuta este script con --reset-bucket.")
