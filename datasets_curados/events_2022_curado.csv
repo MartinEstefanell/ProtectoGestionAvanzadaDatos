@@ -1,0 +1,16 @@
+event_id,date,event,category
+1,2022-01-03,Fin progresivo de estímulos COVID y cambio de ciclo económico,macro
+2,2022-02-24,Invasión de Rusia a Ucrania,geopolitico
+3,2022-03-11,EEUU prohíbe importaciones de petróleo ruso,geopolitico
+4,2022-04-27,Resultados débiles de grandes tecnológicas (Big Tech earnings),corporativo
+5,2022-05-12,Caída de mercados globales por crisis cripto (colapso Terra/Luna),financiero
+6,2022-06-13,Crisis energética global y temores de recesión,macro
+7,2022-06-16,Confirmación de bear market en EEUU (S&P500 -20%),mercado
+8,2022-07-28,Resultados corporativos mejores a lo esperado,corporativo
+9,2022-08-02,Tensiones EEUU-China por visita a Taiwán,geopolitico
+10,2022-09-26,Crisis de bonos en Reino Unido contagia mercados globales,financiero
+11,2022-10-07,Datos laborales sólidos en EEUU refuerzan política restrictiva,macro
+12,2022-10-21,Temporada de resultados mejor a lo esperado impulsa mercado,corporativo
+13,2022-11-08,Elecciones de medio término en EEUU (midterms),politico
+14,2022-11-30,Señales de desaceleración de inflación en EEUU,macro
+15,2022-12-15,Optimismo por posible desaceleración económica controlada,macro
