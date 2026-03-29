@@ -1,0 +1,16 @@
+event_id,date,event,source_event_url
+1,2022-01-03,Fin progresivo de estímulos COVID y cambio de ciclo económico,https://www.reuters.com/markets/us
+2,2022-02-24,Invasión de Rusia a Ucrania,https://www.bbc.com/news/world-europe-60504334
+3,2022-03-11,EEUU prohíbe importaciones de petróleo ruso,https://www.whitehouse.gov
+4,2022-04-27,Resultados débiles de grandes tecnológicas,https://www.cnbc.com/technology
+5,2022-05-12,Crisis cripto Terra/Luna impacta mercados,https://www.bloomberg.com
+6,2022-06-13,Crisis energética y temores de recesión,https://www.reuters.com/markets
+7,2022-06-16,S&P 500 entra en bear market,https://www.wsj.com/market-data
+8,2022-07-28,Resultados corporativos positivos,https://www.cnbc.com/earnings
+9,2022-08-02,Tensión EEUU-China por Taiwán,https://www.bbc.com/news/world-asia
+10,2022-09-26,Crisis bonos Reino Unido,https://www.ft.com
+11,2022-10-07,Datos laborales EEUU fuertes,https://www.bls.gov
+12,2022-10-21,Resultados empresariales impulsan mercado,https://www.bloomberg.com
+13,2022-11-08,Elecciones midterms EEUU,https://www.nytimes.com
+14,2022-11-30,Inflación muestra desaceleración,https://www.reuters.com
+15,2022-12-15,Optimismo económico moderado,https://www.wsj.com
