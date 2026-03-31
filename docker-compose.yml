@@ -1,192 +1,79 @@
-
 services:
-# Spark
-  spark:
-    platform: linux/x86_64
-    image: alexmerced/spark35nb:latest
-    ports: 
-      - 8080:8080  # Master Web UI
-      - 7077:7077  # Master Port
-      - 8888:8888  # Notebook
-    environment:
-      - AWS_REGION=us-east-1
-      - AWS_ACCESS_KEY_ID=admin #minio username
-      - AWS_SECRET_ACCESS_KEY=password #minio password
-    container_name: spark
-    networks:
-      dremio-pg-superset:
-
-# Nessie Catalog Server 
-  nessie:
-    image: projectnessie/nessie:latest
-    container_name: nessie
-    ports:
-      - "19120:19120"  # Expose Nessie API port
-    depends_on:
-      - nessie-data
-    environment:
-      - NESSIE_VERSION_STORE_TYPE=JDBC
-      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://nessie-data:5432/nessie
-      - QUARKUS_DATASOURCE_USERNAME=nessie
-      - QUARKUS_DATASOURCE_PASSWORD=password
-      - QUARKUS_PROFILE=prod
-      - QUARKUS_HTTP_PORT=19120
-      - QUARKUS_LOG_CONSOLE_FORMAT=%d{yyyy-MM-dd HH:mm:ss} %-5p [%c{1.}] (%t) %s%e%n
-      - QUARKUS_LOG_LEVEL=INFO
-      - NESSIE_VERSION_STORE_GARBAGE_COLLECTION_ENABLED=false  
-      - NESSIE_VERSION_STORE_RETENTION_DURATION=P30D  
-
-    networks:
-      dremio-pg-superset:
-
-  nessie-data:
-    image: postgres:13  # prueba para ver si sólo es posible con v13
-    environment:
-      POSTGRES_USER: nessie
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: nessie
-    volumes:
-      - nessie_data_volume:/var/lib/postgresql/data:rw
-    ports:
-      - "5432:5432"
-    networks:
-      pgnetwork:
-      dremio-pg-superset:
-
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "8081:80"
-    depends_on:
-      - nessie-data  # Ensures pgAdmin starts after PostgreSQL
-    networks:
-      - pgnetwork
-
-
-  # Minio Storage Server
   minio:
     image: minio/minio:latest
-    container_name: minio
-    volumes:
-      - ~/minio/data:/data
+    command: server /data --console-address ":9001"
     environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=password
-      - MINIO_DOMAIN=storage
-      - MINIO_REGION_NAME=us-east-1
-      - MINIO_REGION=us-east-1
-    networks:
-      dremio-pg-superset:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_REGION_NAME: ${MINIO_REGION:-us-east-1}
+    volumes:
+      - minio_data:/data
     ports:
-      - 9001:9001
-      - 9000:9000
-    command: ["server", "/data", "--console-address", ":9001"]
-    entrypoint: >
-      /bin/sh -c "
-      minio server /data --console-address ':9001' &
-      sleep 5;
-      mc alias set myminio http://localhost:9000 admin password;
-      mc mb myminio/warehouse;
-      mc mb myminio/seed;
-      mc cp /data/* myminio/seed/;
-      tail -f /dev/null"
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - data
 
-  # Dremio
+  nessie-db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: ${NESSIE_DB_USER:-nessie}
+      POSTGRES_PASSWORD: ${NESSIE_DB_PASSWORD:-password}
+      POSTGRES_DB: ${NESSIE_DB_NAME:-nessie}
+    volumes:
+      - nessie_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NESSIE_DB_USER:-nessie} -d ${NESSIE_DB_NAME:-nessie}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - data
+
+  nessie:
+    image: projectnessie/nessie:latest
+    depends_on:
+      nessie-db:
+        condition: service_started
+    environment:
+      NESSIE_VERSION_STORE_TYPE: JDBC
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://nessie-db:5432/${NESSIE_DB_NAME:-nessie}
+      QUARKUS_DATASOURCE_USERNAME: ${NESSIE_DB_USER:-nessie}
+      QUARKUS_DATASOURCE_PASSWORD: ${NESSIE_DB_PASSWORD:-password}
+      QUARKUS_PROFILE: prod
+      QUARKUS_HTTP_PORT: 19120
+    ports:
+      - "19120:19120"
+    networks:
+      - data
+
   dremio:
-    platform: linux/x86_64
     image: dremio/dremio-oss:latest
     hostname: dremio
-    ports:
-      - 9047:9047
-      - 31010:31010
-      - 32010:32010
-      - 45678:45678
-    container_name: dremio
-    environment:
-      - DREMIO_JAVA_SERVER_EXTRA_OPTS=-Dpaths.dist=file:///opt/dremio/data/dist
-      - dremio.iceberg.enabled=true
-      - dremio.execution.support_unlimited_splits=true
-  # Add these configurations
-      - DREMIO_JAVA_EXTRA_OPTS=-Dfs.s3a.path.style.access=true -Dfs.s3a.endpoint=http://minio:9000
-      - AWS_ACCESS_KEY_ID=admin
-      - AWS_SECRET_ACCESS_KEY=password
-      - DREMIO_JAVA_SERVER_EXTRA_OPTS=-Ddremio.nessie.defaultBranch=main -Ddremio.nessie.authentication.enabled=false
-      - dremio.nessie.client.readTimeout=30000
-      - dremio.nessie.client.writeTimeout=30000
-    volumes:
-      - ./dremio/data:/opt/dremio/data
-      - ./dremio/lib:/var/lib/dremio
-      - ./dremio/local:/localFiles
-    networks:
-      dremio-pg-superset:
-
-  mongodb:
-    image: mongo:6-jammy
-    ports:
-      - '27017:27017'
-    volumes:
-      - dbdata6:/data/db
-
-  mysql:
-    image: mysql:latest
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: IN25
-      MYSQL_DATABASE: IN25
-      MYSQL_USER: IN25
-      MYSQL_PASSWORD: IN25
-    volumes:
-      - ./mysql_data:/var/lib/mysql
-    ports:
-      - "3306:3306"
-    networks:
-      mynetwork:
-      dremio-pg-superset:
-
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin:latest
-    restart: always
     depends_on:
-      - mysql
-    environment:
-      PMA_HOST: mysql
-      MYSQL_ROOT_PASSWORD: IN25
+      minio:
+        condition: service_started
+      nessie:
+        condition: service_started
     ports:
-      - "8083:80"
-    networks:
-      mynetwork:
-      dremio-pg-superset:
-
-  #Superset
-  superset:
-    image: alexmerced/dremio-superset
-    container_name: superset
-    networks:
-      dremio-pg-superset:
-    ports:
-      - 8082:8088
+      - "9047:9047"
+      - "31010:31010"
+      - "32010:32010"
+      - "45678:45678"
     environment:
-      - DATABASE_DB=nessie
-      - DATABASE_HOST=nessie-data
-      - DATABASE_PASSWORD=password
-      - DATABASE_USER=nessie
-      - DATABASE_PORT=5432
+      DREMIO_JAVA_EXTRA_OPTS: "-Dfs.s3a.path.style.access=true -Dfs.s3a.endpoint=http://minio:9000"
+      DREMIO_JAVA_SERVER_EXTRA_OPTS: "-Dpaths.dist=file:///opt/dremio/data/dist -Ddremio.nessie.defaultBranch=main -Ddremio.nessie.authentication.enabled=false"
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-admin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-password}
     volumes:
-      - superset_data:/app/superset_home
-    depends_on:
-      - nessie-data
+      - dremio_data:/opt/dremio/data
+    networks:
+      - data
+
 networks:
-  dremio-pg-superset:
-  pgnetwork:
-    driver: bridge
-  mynetwork:
+  data:
+
 volumes:
-  dbdata6:
-  postgres_data:
-  db-data:
-  nessie_data_volume:
-  superset_data:
+  minio_data:
+  nessie_db_data:
+  dremio_data:
