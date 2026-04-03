@@ -9,15 +9,12 @@ import urllib.error
 import urllib.request
 import http.client
 import socket
+import subprocess
 from typing import Any, Dict, Iterable, Tuple
 
 
 def env(name: str, default: str) -> str:
     return os.environ.get(name, default)
-
-
-def normalize_endpoint(endpoint: str) -> str:
-    return endpoint if endpoint.startswith("http") else f"http://{endpoint}"
 
 
 def parse_body(raw: bytes) -> Any:
@@ -57,12 +54,11 @@ def send_request(
         ConnectionAbortedError,
         socket.timeout,
         socket.error,
-    ) as exc:  # pragma: no cover - network path
+    ) as exc:
         return -1, f"{exc}"
 
 
 def wait_for_dremio(base_url: str, timeout: int = 600) -> None:
-    """Wait until Dremio reports OK, or at least serves the web UI."""
     status_url = f"{base_url}/apiv2/server_status"
     ui_url = f"{base_url}/"
     start = time.time()
@@ -71,24 +67,24 @@ def wait_for_dremio(base_url: str, timeout: int = 600) -> None:
             status_code, body = send_request("GET", status_url)
             if status_code == 200 and isinstance(body, dict) and body.get("status") in {"OK", "RUNNING"}:
                 return
-            # Consider UI reachable as "ready enough" to proceed
             if status_code in {301, 302, 303, 307, 308, 401, 403, 404}:
                 return
-            # Fallback: try the UI root
+
             ui_code, _ = send_request("GET", ui_url)
             if ui_code in {200, 301, 302, 303, 307, 308, 401, 403}:
                 return
+
             elapsed = int(time.time() - start)
             print(f"Dremio aun no listo ({status_code}). Llevamos {elapsed}s, reintento en 5s.")
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             elapsed = int(time.time() - start)
             print(f"Dremio aun no listo (error {exc}). Llevamos {elapsed}s, reintento en 5s.")
         time.sleep(5)
+
     raise TimeoutError(f"Dremio no estuvo listo en {timeout} segundos")
 
 
 def ensure_first_user(base_url: str, user: str, password: str, email: str, timeout: int = 120) -> None:
-    """Crea el primer usuario admin si no existe; reintenta hasta timeout."""
     url = f"{base_url}/apiv2/bootstrap/firstuser"
     payload = {
         "userName": user,
@@ -130,7 +126,14 @@ def ensure_first_user(base_url: str, user: str, password: str, email: str, timeo
     raise TimeoutError("No se pudo crear/confirmar el usuario admin antes del timeout.")
 
 
-def login_with_retry(base_url: str, user: str, password: str, total_timeout: int = 60, interval: int = 5, verbose: bool = False) -> str:
+def login_with_retry(
+    base_url: str,
+    user: str,
+    password: str,
+    total_timeout: int = 60,
+    interval: int = 5,
+    verbose: bool = False,
+) -> str:
     start = time.time()
     last_error: str | None = None
     while time.time() - start < total_timeout:
@@ -159,19 +162,28 @@ def fetch_source(base_url: str, token: str, source_name: str) -> Tuple[int, Any]
     status, body = send_request("GET", url, headers=headers)
     if status != 404:
         return status, body
-    # Fallback: listar y resolver por id
+
     list_status, list_body = send_request("GET", f"{base_url}/api/v3/catalog?type=source", headers=headers)
     if list_status != 200 or not isinstance(list_body, dict):
         return list_status, list_body
+
     for entry in list_body.get("data", []):
         path = entry.get("path", [])
         if path and path[0] == source_name:
             src_id = entry.get("id")
             return send_request("GET", f"{base_url}/api/v3/catalog/{src_id}", headers=headers)
+
     return 404, {"errorMessage": f"source {source_name} not found"}
 
 
-def fetch_source_with_retry(base_url: str, token: str, source_name: str, attempts: int = 30, delay: float = 1.0) -> Tuple[int, Any]:
+def fetch_source_with_retry(
+    base_url: str,
+    token: str,
+    source_name: str,
+    attempts: int = 30,
+    delay: float = 1.0,
+) -> Tuple[int, Any]:
+    status, body = 404, None
     for _ in range(attempts):
         status, body = fetch_source(base_url, token, source_name)
         if status != 404:
@@ -195,40 +207,24 @@ def delete_source_fetch_tag(base_url: str, token: str, source_name: str) -> Tupl
     return delete_source(base_url, token, source_name, tag)
 
 
-def metadata_policy() -> Dict[str, Any]:
-    return {
-        "authTTLMs": 86400000,
-        "namesRefreshMs": 3600000,
-        "datasetDefinitionRefreshAfterMs": 3600000,
-        "datasetDefinitionExpireAfterMs": 10800000,
-        "datasetUpdateMode": "PREFETCH",
-        "deleteUnavailableDatasets": True,
-        "autoPromoteDatasets": True,
-    }
-
-
 def property_list(minio_endpoint: str) -> Iterable[Dict[str, str]]:
     return [
-        {"name": "fs.s3a.path.style.access", "value": "true"},
         {"name": "fs.s3a.endpoint", "value": minio_endpoint},
+        {"name": "fs.s3a.path.style.access", "value": "true"},
         {"name": "dremio.s3.compat", "value": "true"},
     ]
 
 
 def normalize_aws_root_path(warehouse_path: str) -> str:
-    # Deriva awsRootPath a partir de warehouse_path (s3a://bucket/path -> /bucket/path)
     if warehouse_path.startswith("s3a://"):
-        warehouse_path = warehouse_path[len("s3a://") :]
+        warehouse_path = warehouse_path[len("s3a://"):]
     if not warehouse_path.startswith("/"):
         warehouse_path = "/" + warehouse_path
     return warehouse_path
 
 
 def encode_access_secret(secret: str) -> str:
-    """
-    Dremio espera el secreto plano prefijado con 'data:,', salvo que ya venga con 'data:' o marcador.
-    """
-    return secret  # probamos en claro, sin prefijo
+    return secret
 
 
 def candidate_configs(
@@ -271,6 +267,7 @@ def create_source(
     headers = {"Authorization": f"_dremio{token}"}
     last_error: str | None = None
     cfg_list = list(cfgs)
+
     for idx, cfg in enumerate(cfg_list, start=1):
         payload = {
             "entityType": "source",
@@ -281,16 +278,21 @@ def create_source(
         }
         if verbose:
             print(f"Intento crear fuente variante {idx}/{len(cfg_list)}: {json.dumps(cfg, indent=2)}")
+
         status_code, body = send_request("POST", url, payload, headers=headers)
+
         if status_code == 409:
-            # Intenta borrar y recrear
             delete_source_fetch_tag(base_url, token, source_name)
             status_code, body = send_request("POST", url, payload, headers=headers)
+
         if verbose:
             print(f"  -> resultado HTTP {status_code}, body: {body}")
+
         if status_code in {200, 201, 409}:
             return
+
         last_error = f"HTTP {status_code}: {body}"
+
     raise RuntimeError(f"No se pudo crear la fuente Nessie en Dremio. {last_error}")
 
 
@@ -298,6 +300,7 @@ def update_source(base_url: str, token: str, existing: Dict[str, Any], cfgs: Ite
     url = f"{base_url}/api/v3/source/{existing['name']}"
     headers = {"Authorization": f"_dremio{token}"}
     last_error: str | None = None
+
     for cfg in cfgs:
         payload = {
             "id": existing.get("id"),
@@ -311,6 +314,7 @@ def update_source(base_url: str, token: str, existing: Dict[str, Any], cfgs: Ite
         if status_code in {200, 201}:
             return
         last_error = f"HTTP {status_code}: {body}"
+
     raise RuntimeError(f"No se pudo actualizar la fuente Nessie. {last_error}")
 
 
@@ -318,22 +322,50 @@ def config_matches(current: Dict[str, Any], desired_cfgs: Iterable[Dict[str, Any
     cfg = current.get("config", {})
     for desired in desired_cfgs:
         ok = True
-        for key in ["secure"]:
+        for key in ["secure", "awsAccessKey", "awsRootPath", "storageProvider", "credentialType"]:
             if cfg.get(key) != desired.get(key):
                 ok = False
                 break
         if not ok:
             continue
+
         current_uri = cfg.get("nessieEndpoint")
         desired_uri = desired.get("nessieEndpoint")
         if current_uri != desired_uri:
             continue
+
         desired_props = {p["name"]: p["value"] for p in desired.get("propertyList", [])}
         current_props = {p["name"]: p["value"] for p in cfg.get("propertyList", [])}
         prop_ok = all(current_props.get(k) == v for k, v in desired_props.items())
         if prop_ok:
             return True
+
     return False
+
+
+def bootstrap_minio(verbose: bool = False) -> None:
+    print("[INFO] Configurando MinIO en Dremio (auto bootstrap)...")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "scripts/bootstrap_minio.py"],
+            check=True,
+            capture_output=not verbose,
+            text=True,
+        )
+
+        if verbose and result.stdout:
+            print(result.stdout)
+
+        print("[OK] MinIO conectado automaticamente a Dremio")
+
+    except subprocess.CalledProcessError as e:
+        print("[ERROR] Fallo bootstrap de MinIO")
+        if e.stdout:
+            print(e.stdout)
+        if e.stderr:
+            print(e.stderr)
+        raise RuntimeError("No se pudo ejecutar scripts/bootstrap_minio.py correctamente") from e
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -343,19 +375,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--secure", action="store_true", help="Usar HTTPS para llamar a Dremio")
     parser.add_argument("--admin-user", default=env("DREMIO_ADMIN_USER", "admin"), help="Usuario admin a crear/usar")
     parser.add_argument(
-        "--admin-password", default=env("DREMIO_ADMIN_PASSWORD", "admin123"), help="Password del usuario admin"
+        "--admin-password",
+        default=env("DREMIO_ADMIN_PASSWORD", "admin123"),
+        help="Password del usuario admin",
     )
     parser.add_argument(
-        "--admin-email", default=env("DREMIO_ADMIN_EMAIL", "admin@example.com"), help="Email para el usuario admin"
+        "--admin-email",
+        default=env("DREMIO_ADMIN_EMAIL", "admin@example.com"),
+        help="Email para el usuario admin",
     )
     parser.add_argument(
-        "--source-name", default=env("DREMIO_SOURCE_NAME", "nessie"), help="Nombre de la fuente Nessie en Dremio"
+        "--source-name",
+        default=env("DREMIO_SOURCE_NAME", "nessie"),
+        help="Nombre de la fuente Nessie en Dremio",
     )
     parser.add_argument(
-        "--nessie-uri", default=env("NESSIE_API_URI", "http://nessie:19120/api/v2"), help="Endpoint REST de Nessie"
+        "--nessie-uri",
+        default=env("NESSIE_API_URI", "http://nessie:19120/api/v2"),
+        help="Endpoint REST de Nessie",
     )
     parser.add_argument(
-        "--nessie-branch", default=env("NESSIE_BRANCH", "main"), help="Branch por defecto en Nessie"
+        "--nessie-branch",
+        default=env("NESSIE_BRANCH", "main"),
+        help="Branch por defecto en Nessie",
     )
     parser.add_argument(
         "--warehouse-path",
@@ -365,14 +407,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--root-path", default=env("NESSIE_ROOT_PATH", "/"), help="Prefijo raiz en el bucket")
     parser.add_argument(
         "--minio-endpoint",
-        default=env("MINIO_ENDPOINT", "http://minio:9000"),
-        help="Endpoint interno S3/MinIO para que Dremio lo use",
+        default=env("MINIO_INTERNAL_ENDPOINT", "minio:9000"),
+        help="Endpoint interno S3/MinIO para que Dremio lo use, sin http://",
     )
     parser.add_argument(
-        "--access-key", default=env("MINIO_ROOT_USER", "admin"), help="Access key S3/MinIO para Dremio"
+        "--access-key",
+        default=env("MINIO_ROOT_USER", "admin"),
+        help="Access key S3/MinIO para Dremio",
     )
     parser.add_argument(
-        "--secret-key", default=env("MINIO_ROOT_PASSWORD", "password"), help="Secret key S3/MinIO para Dremio"
+        "--secret-key",
+        default=env("MINIO_ROOT_PASSWORD", "password"),
+        help="Secret key S3/MinIO para Dremio",
     )
     parser.add_argument("--force-recreate", action="store_true", help="Forzar recrear/actualizar la fuente Nessie")
     parser.add_argument("--validate-only", action="store_true", help="Solo validar que la fuente existe y coincide")
@@ -386,16 +432,16 @@ def main(argv: list[str] | None = None) -> None:
     scheme = "https" if args.secure else "http"
     base_url = f"{scheme}://{args.host}:{args.port}"
 
-    print(f"[1/5] Esperando a que Dremio este listo en {base_url} ...")
+    print(f"[1/6] Esperando a que Dremio este listo en {base_url} ...")
     wait_for_dremio(base_url)
 
     if not args.skip_ensure_user:
-        print("[2/5] Asegurando usuario admin ...")
+        print("[2/6] Asegurando usuario admin ...")
         ensure_first_user(base_url, args.admin_user, args.admin_password, args.admin_email)
     else:
-        print("[2/5] Saltando creacion de usuario admin (--skip-ensure-user)")
+        print("[2/6] Saltando creacion de usuario admin (--skip-ensure-user)")
 
-    print("[3/5] Autenticando ...")
+    print("[3/6] Autenticando ...")
     try:
         token = login(base_url, args.admin_user, args.admin_password)
     except RuntimeError as exc:
@@ -408,7 +454,7 @@ def main(argv: list[str] | None = None) -> None:
         else:
             raise
 
-    minio_ep = normalize_endpoint(args.minio_endpoint)
+    minio_ep = args.minio_endpoint.strip()
     cfgs = list(
         candidate_configs(
             args.nessie_uri,
@@ -420,17 +466,20 @@ def main(argv: list[str] | None = None) -> None:
             minio_ep,
         )
     )
+
     if args.verbose:
         print("Configuracion deseada (primer candidato):")
         print(json.dumps(cfgs[0], indent=2))
 
-    print(f"[4/5] Creando/validando fuente '{args.source_name}' hacia Nessie + MinIO ...")
+    print(f"[4/6] Creando/validando fuente '{args.source_name}' hacia Nessie + MinIO ...")
     status_code, current = fetch_source(base_url, token, args.source_name)
+
     if args.force_recreate and status_code == 200:
         if args.verbose:
             print("Se pidio --force-recreate, eliminando fuente existente antes de crear...")
         delete_source_fetch_tag(base_url, token, args.source_name)
         status_code, current = fetch_source(base_url, token, args.source_name)
+
     if status_code == 404:
         if args.validate_only:
             raise RuntimeError("Fuente no existe y se pidio solo validar (--validate-only).")
@@ -460,13 +509,16 @@ def main(argv: list[str] | None = None) -> None:
         print("Configuracion final de la fuente:")
         print(json.dumps(current, indent=2))
 
-    print("[5/5] Validacion final ...")
+    print("[5/6] Validacion final de Nessie ...")
     if config_matches(current, cfgs):
         print("OK: la fuente Nessie esta alineada y lista.")
     else:
         raise RuntimeError("Validacion final fallo: la configuracion no coincide.")
 
-    print("Bootstrap Dremio listo. Puedes crear tablas Iceberg sobre el catalogo Nessie.")
+    print("[6/6] Configurando MinIO automaticamente ...")
+    bootstrap_minio(verbose=args.verbose)
+
+    print("Bootstrap completo: Dremio + Nessie + MinIO listos.")
 
 
 if __name__ == "__main__":

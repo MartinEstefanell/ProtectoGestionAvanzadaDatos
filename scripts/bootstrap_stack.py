@@ -30,7 +30,7 @@ def run_cmd_with_retry(cmd: list[str], cwd: str | None = None, retries: int = 2,
             attempt += 1
             if attempt > retries:
                 raise
-            print(f"Comando fallo (intento {attempt}/{retries+1}): {exc}. Reintentando en {delay}s ...")
+            print(f"Comando fallo (intento {attempt}/{retries + 1}): {exc}. Reintentando en {delay}s ...")
             time.sleep(delay)
 
 
@@ -51,7 +51,6 @@ def wait_http(url: str, timeout: int = 180, interval: int = 5) -> None:
             socket.error,
         ) as exc:
             elapsed = int(time.time() - start)
-            remaining = int(timeout - (time.time() - start))
             print(f"Aun no listo {url} (llevamos {elapsed}s, reintento en {interval}s). Detalle: {exc}")
         time.sleep(interval)
     raise TimeoutError(f"No hubo respuesta saludable de {url} en {timeout} segundos")
@@ -59,18 +58,23 @@ def wait_http(url: str, timeout: int = 180, interval: int = 5) -> None:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Pipeline completo: docker compose up + lakehouse local + carga a MinIO + bootstrap Dremio."
+        description=(
+            "Pipeline completo: docker compose up + lakehouse local + carga a MinIO + "
+            "bootstrap Dremio + carga automatica de tablas Iceberg."
+        )
     )
     parser.add_argument("--compose-file", default="docker-compose.yml", help="Ruta al docker-compose a usar")
     parser.add_argument("--skip-compose", action="store_true", help="Omitir docker compose up (ya corriendo)")
     parser.add_argument("--bucket-name", default=env("MINIO_BUCKET", "lakehouse"), help="Bucket en MinIO")
     parser.add_argument(
-        "--minio-endpoint", default=env("MINIO_ENDPOINT", "localhost:9000"), help="Endpoint HTTP para subir datos"
+        "--minio-endpoint",
+        default=env("MINIO_ENDPOINT", "localhost:9000"),
+        help="Endpoint HTTP para subir datos desde la maquina host",
     )
     parser.add_argument(
         "--minio-internal-endpoint",
-        default=env("MINIO_INTERNAL_ENDPOINT", "http://minio:9000"),
-        help="Endpoint que Dremio debe usar (nombre de servicio Docker)",
+        default=env("MINIO_INTERNAL_ENDPOINT", "minio:9000"),
+        help="Endpoint interno que Dremio debe usar dentro de Docker",
     )
     parser.add_argument("--minio-access-key", default=env("MINIO_ROOT_USER", "admin"), help="Access key MinIO")
     parser.add_argument("--minio-secret-key", default=env("MINIO_ROOT_PASSWORD", "password"), help="Secret key MinIO")
@@ -82,11 +86,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Ruta warehouse donde Dremio escribira Iceberg",
     )
     parser.add_argument(
-        "--wait-nessie", action="store_true", help="Esperar explicitamente a Nessie antes de bootstrapping Dremio"
+        "--wait-nessie",
+        action="store_true",
+        help="Esperar explicitamente a Nessie antes de bootstrapping Dremio",
     )
     parser.add_argument(
-        "--validate-only", action="store_true", help="Solo validar la fuente en Dremio (no recrea si falta)"
+        "--validate-only",
+        action="store_true",
+        help="Solo validar la fuente en Dremio (no recrea si falta)",
     )
+    parser.add_argument(
+        "--skip-load-iceberg",
+        action="store_true",
+        help="Omitir la carga automatica de tablas Iceberg",
+    )
+    parser.add_argument("--verbose", action="store_true", help="Imprimir mas detalle")
     return parser.parse_args(argv)
 
 
@@ -100,15 +114,17 @@ def main(argv: list[str] | None = None) -> None:
         print("Skipeando docker compose up (--skip-compose).")
 
     health_base = args.minio_endpoint
-    if not health_base.startswith("http"):
+    if not health_base.startswith("http://") and not health_base.startswith("https://"):
         health_base = f"http://{health_base}"
     wait_http(f"{health_base}/minio/health/live")
 
     if args.wait_nessie:
         wait_http("http://localhost:19120/api/v2/trees")
 
+    print("[1/5] Construyendo estructura local del lakehouse ...")
     run_cmd_with_retry([sys.executable, "scripts/build_lakehouse.py"], cwd=repo_root)
 
+    print("[2/5] Subiendo artefactos a MinIO ...")
     run_cmd_with_retry(
         [
             sys.executable,
@@ -125,6 +141,7 @@ def main(argv: list[str] | None = None) -> None:
         cwd=repo_root,
     )
 
+    print("[3/5] Ejecutando bootstrap de Dremio/Nessie/MinIO ...")
     bootstrap_cmd = [
         sys.executable,
         "scripts/bootstrap_dremio.py",
@@ -136,14 +153,35 @@ def main(argv: list[str] | None = None) -> None:
         args.minio_internal_endpoint,
         "--warehouse-path",
         args.warehouse_path,
+        "--access-key",
+        args.minio_access_key,
+        "--secret-key",
+        args.minio_secret_key,
     ]
 
     if args.validate_only:
         bootstrap_cmd.append("--validate-only")
 
+    if args.verbose:
+        bootstrap_cmd.append("--verbose")
+
     run_cmd_with_retry(bootstrap_cmd, cwd=repo_root)
 
-    print("Stack listo. Revisa Dremio en http://localhost:9047 y deberias ver la fuente 'nessie'.")
+    if not args.skip_load_iceberg:
+        print("[4/5] Creando y cargando tablas Iceberg de dimensions ...")
+        load_iceberg_cmd = [
+            sys.executable,
+            "scripts/load_dimensions_iceberg.py",
+        ]
+        run_cmd_with_retry(load_iceberg_cmd, cwd=repo_root)
+    else:
+        print("[4/5] Saltando carga automatica de Iceberg (--skip-load-iceberg).")
+
+    print("[5/5] Pipeline completo finalizado.")
+    print("Stack listo. Revisa Dremio en http://localhost:9047 y deberias ver:")
+    print(" - la fuente 'nessie'")
+    print(" - la fuente 'minio_files'")
+    print(" - las tablas Iceberg: dim_date_iceberg, dim_event_iceberg, fact_sp500_iceberg")
 
 
 if __name__ == "__main__":
