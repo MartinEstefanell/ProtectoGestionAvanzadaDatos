@@ -63,24 +63,24 @@ def main() -> None:
         else (project_root / "datasets_curados").resolve()
     )
 
-    # Fuentes raw
+    
     sp500_source = get_required_path(resolved_dataset_dir / "sp500_2022.csv")
     event_source = get_required_path(resolved_dataset_dir / "events_2022.csv")
     event_audit_source = get_required_path(resolved_dataset_dir / "events_audit_2022.csv")
 
-    # Fuentes analíticas
+    
     dim_date_source = get_required_path(resolved_analytics_dir / "dim_date.csv")
     dim_event_source = get_required_path(resolved_analytics_dir / "dim_event.csv")
     fact_sp500_source = get_required_path(resolved_analytics_dir / "fact_sp500.csv")
 
-    # Fuentes curadas
+    
     sp500_curated_source = get_required_path(resolved_curated_dir / "sp500_2022_curado.csv")
     event_curated_source = get_required_path(resolved_curated_dir / "events_2022_curado.csv")
     event_audit_curated_source = get_required_path(
         resolved_curated_dir / "events_audit_2022_curado.csv"
     )
 
-    # Estructura destino
+    
     raw_sp500_dir = resolved_lakehouse_dir / "raw" / "sp500"
     raw_event_dir = resolved_lakehouse_dir / "raw" / "event"
     raw_event_audit_dir = resolved_lakehouse_dir / "raw" / "event_audit"
@@ -99,17 +99,17 @@ def main() -> None:
     ensure_directory(curated_event_dir)
     ensure_directory(curated_event_audit_dir)
 
-    # Copia raw
+    
     copy_if_needed(sp500_source, raw_sp500_dir / "sp500_2022.csv")
     copy_if_needed(event_source, raw_event_dir / "events_2022.csv")
     copy_if_needed(event_audit_source, raw_event_audit_dir / "events_audit_2022.csv")
 
-    # Copia dimensiones / hechos
+    
     copy_if_needed(dim_date_source, dimensions_dir / "dim_date.csv")
     copy_if_needed(dim_event_source, dimensions_dir / "dim_event.csv")
     copy_if_needed(fact_sp500_source, dimensions_dir / "fact_sp500.csv")
 
-    # Copia curados
+    
     copy_if_needed(sp500_curated_source, curated_sp500_dir / "sp500_2022_curado.csv")
     copy_if_needed(event_curated_source, curated_event_dir / "events_2022_curado.csv")
     copy_if_needed(

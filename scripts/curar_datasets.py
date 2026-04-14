@@ -16,32 +16,32 @@ def curar_sp500() -> None:
 
     df = pd.read_csv(input_path)
 
-    # El archivo original viene con:
-    # encabezados: Price, Close, High, Low, Open, Volume
-    # primera fila de datos: ticker (^GSPC)
-    # resto: datos reales
-    #
-    # Luego de leer con pandas, la fila del ticker queda como la primera fila de datos.
-    # Por eso la eliminamos.
+    
+    
+    
+    
+    
+    
+    
     df = df.iloc[1:].copy()
 
-    # Renombrar columnas a una estructura más clara para análisis
+    
     df.columns = ["date", "close", "high", "low", "open", "volume"]
 
-    # Convertir tipos
+    
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
     numeric_cols = ["close", "high", "low", "open", "volume"]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Eliminar filas inválidas
+    
     df = df.dropna(subset=["date"])
 
-    # Ordenar y resetear índice
+    
     df = df.sort_values("date").reset_index(drop=True)
 
-    # Guardar
+    
     df.to_csv(output_path, index=False)
     print(f"OK - sp500 curado guardado en: {output_path}")
 
@@ -74,7 +74,7 @@ def curar_events_audit() -> None:
     audit = pd.read_csv(audit_input_path)
     events = pd.read_csv(events_input_path)
 
-    # Normalización básica
+    
     audit["date"] = pd.to_datetime(audit["date"], errors="coerce")
     audit["event"] = audit["event"].astype(str).str.strip()
     audit["source_event_url"] = audit["source_event_url"].astype(str).str.strip()
@@ -84,7 +84,7 @@ def curar_events_audit() -> None:
     events["event"] = events["event"].astype(str).str.strip()
     events["category"] = events["category"].astype(str).str.strip()
 
-    # Validación: en este caso asumimos un solo evento por fecha
+    
     duplicadas = events["date"].duplicated().sum()
     if duplicadas > 0:
         raise ValueError(
@@ -92,17 +92,17 @@ def curar_events_audit() -> None:
             "No se puede hacer merge solo por date de forma segura."
         )
 
-    # Merge SOLO por date
+    
     audit = audit.merge(
         events[["event_id", "date"]],
         on="date",
         how="left"
     )
 
-    # Reordenar columnas
+    
     audit = audit[["event_id", "date", "event", "source_event_url"]]
 
-    # Validación final
+    
     unmatched = audit["event_id"].isna().sum()
     if unmatched > 0:
         print(f"ADVERTENCIA - hay {unmatched} registros sin event_id asociado")

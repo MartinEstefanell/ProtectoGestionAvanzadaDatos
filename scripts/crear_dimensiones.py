@@ -10,9 +10,9 @@ OUTPUT_DIR = BASE_DIR / "analytics"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# -----------------------------
-# 1. DIM_DATE
-# -----------------------------
+
+
+
 def build_dim_date():
     sp500_path = CURATED_DIR / "sp500_2022_curado.csv"
     df = pd.read_csv(sp500_path)
@@ -51,9 +51,9 @@ def build_dim_date():
     print(f"OK - dim_date generado en {output_path}")
 
 
-# -----------------------------
-# 2. FACT_SP500
-# -----------------------------
+
+
+
 def build_fact_sp500():
     sp500_path = CURATED_DIR / "sp500_2022_curado.csv"
     df = pd.read_csv(sp500_path)
@@ -73,9 +73,9 @@ def build_fact_sp500():
     print(f"OK - fact_sp500 generado en {output_path}")
 
 
-# -----------------------------
-# 3. DIM_EVENT
-# -----------------------------
+
+
+
 def build_dim_event():
     events_path = CURATED_DIR / "events_2022_curado.csv"
     df = pd.read_csv(events_path)
@@ -95,9 +95,9 @@ def build_dim_event():
     print(f"OK - dim_event generado en {output_path}")
 
 
-# -----------------------------
-# MAIN
-# -----------------------------
+
+
+
 def main():
     build_dim_date()
     build_fact_sp500()

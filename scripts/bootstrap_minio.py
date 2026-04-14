@@ -3,9 +3,9 @@ import sys
 import time
 import requests
 
-# ==============================
-# CONFIG (ENV VARIABLES)
-# ==============================
+
+
+
 
 DREMIO_URL = os.getenv("DREMIO_URL", "http://localhost:9047")
 DREMIO_USER = os.getenv("DREMIO_USER", "admin")
@@ -19,9 +19,9 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
 
 TIMEOUT_SECONDS = int(os.getenv("BOOTSTRAP_TIMEOUT_SECONDS", "180"))
 
-# ==============================
-# HELPERS
-# ==============================
+
+
+
 
 def wait_for_dremio():
     deadline = time.time() + TIMEOUT_SECONDS
@@ -126,9 +126,9 @@ def create_source(token):
     print("[OK] Source MinIO creado correctamente")
 
 
-# ==============================
-# MAIN
-# ==============================
+
+
+
 
 def main():
     try:

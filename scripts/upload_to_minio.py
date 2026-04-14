@@ -84,7 +84,7 @@ def main() -> None:
 
     resolved_lakehouse_dir = get_required_path(resolved_lakehouse_dir)
 
-    # Validaciones mínimas esperadas
+    
     get_required_path(resolved_lakehouse_dir / "raw" / "sp500" / "sp500_2022.csv")
     get_required_path(resolved_lakehouse_dir / "raw" / "event" / "events_2022.csv")
     get_required_path(resolved_lakehouse_dir / "raw" / "event_audit" / "events_audit_2022.csv")

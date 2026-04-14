@@ -11,9 +11,9 @@ from typing import Any, Dict, List
 import requests
 
 
-# ==============================
-# CONFIG
-# ==============================
+
+
+
 
 DREMIO_URL = os.getenv("DREMIO_URL", "http://localhost:9047")
 DREMIO_USER = os.getenv("DREMIO_USER", "admin")
@@ -31,9 +31,9 @@ LOCAL_DIMENSIONS_DIR = Path(
 JOB_TIMEOUT_SECONDS = int(os.getenv("DREMIO_JOB_TIMEOUT_SECONDS", "180"))
 
 
-# ==============================
-# HELPERS DREMIO
-# ==============================
+
+
+
 
 def login() -> str:
     resp = requests.post(
@@ -102,9 +102,9 @@ def run_sql(token: str, sql: str) -> None:
     print(f"[OK] Job completado: {job_id}")
 
 
-# ==============================
-# HELPERS CSV / SQL
-# ==============================
+
+
+
 
 def quote_ident(name: str) -> str:
     escaped = name.replace('"', '""')
@@ -162,9 +162,9 @@ FROM {quote_ident(NESSIE_SOURCE)}.{quote_ident(table_name)}
 """.strip()
 
 
-# ==============================
-# WORKFLOW
-# ==============================
+
+
+
 
 def process_table(token: str, csv_filename: str, iceberg_table_name: str) -> None:
     local_csv = LOCAL_DIMENSIONS_DIR / csv_filename
